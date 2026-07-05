@@ -14,24 +14,31 @@ window.PoemSoundParticles = class PoemSoundParticles {
     if (!this.active) return;
 
     this.timer = window.setTimeout(() => {
-      this.burst(genome, masterVolume);
+      this.bloom(genome, masterVolume);
 
-      const quick = 260 + (1 - genome.particleRate) * 900;
-      const loose = Math.random() * 900 * genome.particleScatter;
-      this.schedule(genome, masterVolume, quick + loose);
+      const slow = 1500 + (1 - genome.particleRate) * 2400;
+      const loose = Math.random() * 1800 * genome.particleScatter;
+      this.schedule(genome, masterVolume, slow + loose);
     }, delay);
   }
 
-  burst(genome, masterVolume) {
-    const noise = new p5.Noise("white");
-    const amp = genome.particleVolume * masterVolume * (0.4 + Math.random() * 0.8);
+  bloom(genome, masterVolume) {
+    const osc = new p5.Oscillator("sine");
+    const partials = [1, 1.5, 2, 2.5];
+    const partial = partials[Math.floor(Math.random() * partials.length)];
+    const freq = genome.second * partial + Math.random() * genome.harmonicSpread * 45;
+    const amp = genome.particleVolume * masterVolume * (0.1 + Math.random() * 0.16);
+    const swell = 0.18 + Math.random() * 0.28;
+    const release = 0.9 + Math.random() * 1.2;
 
-    noise.amp(0);
-    noise.start();
-    noise.amp(amp, 0.015);
+    osc.freq(freq);
+    osc.amp(0);
+    osc.start();
+    osc.amp(amp, swell);
+    osc.freq(freq * (1 + genome.shimmer * 0.01), release);
 
-    window.setTimeout(() => noise.amp(0, 0.08 + Math.random() * 0.16), 35);
-    window.setTimeout(() => noise.stop(), 360);
+    window.setTimeout(() => osc.amp(0, release), swell * 1000 + 160);
+    window.setTimeout(() => osc.stop(), (swell + release) * 1000 + 360);
   }
 
   stop() {

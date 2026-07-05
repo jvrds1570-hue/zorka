@@ -1,4 +1,25 @@
 let font;
+let nimbusFont;
+let poemFont;
+let poemScroll = 0;
+let poemScrollMax = 0;
+let poemSceneFade = 0;
+let poemSceneTime = 0;
+let romanceRevealCount = 0;
+let romanceVisualProgress = 0;
+let romanceDarkProgress = 0;
+let romanceBlockFades = [];
+let romanceStar = null;
+let elevationBlockStates = [];
+let elevationLetterStates = [];
+let listenCursorX = 0;
+let listenCursorY = 0;
+let listenFollow = 0;
+let listenRevealSections = 0;
+let listenRevealProgress = 0;
+let eveningParticles = [];
+let sonnetRevealLines = 0;
+let sonnetRevealProgress = 0;
 const INTRO = 0;
 const CONSTELLATION = 1;
 const STAR_EXIT = 2;
@@ -71,7 +92,9 @@ const button = {
 };
 
 function preload() {
-  font = loadFont("nimbus-mono.bold.otf");
+  nimbusFont = loadFont("nimbus-mono.bold.otf");
+  poemFont = loadFont("corbel.ttf");
+  font = nimbusFont;
 }
 
 function soundEvent(name, ...args) {
@@ -87,7 +110,7 @@ function setup() {
   createCanvas(windowWidth, windowHeight, WEBGL);
   soundEvent("initProjectSound");
 
-  textFont(font);
+  textFont(nimbusFont);
   textWrap(CHAR);
 
   noCursor();
@@ -372,6 +395,9 @@ function draw() {
 }
 
 function drawIntro() {
+  textFont(nimbusFont);
+  textWrap(CHAR);
+
   // ---------- transition timers ----------
   if (transition) {
     scene2Time += deltaTime / 1000;
@@ -457,6 +483,9 @@ function drawIntro() {
 }
 
 function drawConstellation() {
+  textFont(nimbusFont);
+  textWrap(CHAR);
+
   scene2Time += deltaTime / 1000;
 
   background(0);
@@ -1022,6 +1051,7 @@ drawConstellationStars(constellationExit);
 
   if (t >= 1) {
     currentScene = POEM;
+    resetPoemSceneState();
     soundEvent(
       "startPoemSound",
       getSelectedPoemPage(),
@@ -1037,6 +1067,7 @@ function drawEmptySpace() {
 
   if (emptyTimer > 1800) {
     currentScene = POEM;
+    resetPoemSceneState();
     soundEvent(
       "startPoemSound",
       getSelectedPoemPage(),
@@ -1048,6 +1079,34 @@ function drawEmptySpace() {
 function getSelectedPoemPage() {
   if (!selectedStar) return null;
   return selectedStar.poemPage || selectedStar.poem;
+}
+
+function resetPoemSceneState() {
+  const key = selectedStar ? selectedStar.pageKey || selectedStar.label : "";
+  poemSceneFade = 0;
+  poemSceneTime = 0;
+
+  if (key === "romance") {
+    romanceRevealCount = 0;
+    romanceVisualProgress = 0;
+    romanceDarkProgress = 0;
+    romanceBlockFades = [];
+    resetRomanceStar();
+  } else if (key === "elevation") {
+    elevationBlockStates = [];
+    elevationLetterStates = [];
+  } else if (key === "sonnet14") {
+    sonnetRevealLines = 0;
+    sonnetRevealProgress = 0;
+  } else if (key === "listen") {
+    listenCursorX = width * 0.5;
+    listenCursorY = height * 0.5;
+    listenFollow = 1;
+    listenRevealSections = 0;
+    listenRevealProgress = 0;
+  } else if (key === "eveningStar") {
+    eveningParticles = [];
+  }
 }
 
 function applyEditablePoemPages() {
@@ -1095,65 +1154,743 @@ function getPoemPageStyle(poem) {
     bodyBottom: defaultStyle.bodyBottom ?? 250,
     titleSize: defaultStyle.titleSize ?? 38,
     authorSize: defaultStyle.authorSize ?? 18,
-    bodySize: defaultStyle.bodySize ?? 20,
-    bodyLeading: defaultStyle.bodyLeading ?? 34,
+    bodySize: defaultStyle.bodySize ?? 17,
+    bodyLeading: defaultStyle.bodyLeading ?? 29,
     hintSize: defaultStyle.hintSize ?? 14,
     ...customStyle,
   };
 }
 
 function drawPoemPage() {
-  background(255);
-
   if (!selectedStar) return;
 
   soundEvent("updateProjectSound");
+  poemSceneTime += deltaTime / 1000;
+  poemSceneFade = lerp(poemSceneFade, 1, 0.035);
 
-  let poem = getSelectedPoemPage();
+  const poem = getSelectedPoemPage();
+  const key = selectedStar.pageKey || selectedStar.label || "poem";
   const style = getPoemPageStyle(poem);
-  const title = poem.title || selectedStar.label;
+  const lineCount = (poem.text || "").split("\n").length;
+  poemScrollMax = max(
+    0,
+    lineCount * style.bodyLeading - (height - style.bodyY - style.bodyBottom)
+  );
 
   push();
-
+  drawingContext.disable(drawingContext.DEPTH_TEST);
   translate(-width / 2, -height / 2);
+  textFont(poemFont);
+  textWrap(WORD);
 
-  fill(20);
+  if (key === "romance") {
+    drawRomancePoem(poem, style);
+  } else if (key === "listen") {
+    drawListenPoem(poem, style);
+  } else if (key === "elevation") {
+    drawElevationPoem(poem, style);
+  } else if (key === "sonnet14") {
+    drawSonnetPoem(poem, style);
+  } else if (key === "eveningStar") {
+    drawEveningStarPoem(poem, style);
+  } else {
+    drawSimplePoem(poem, style, {
+      bg: [255, 255, 255],
+      ink: [20, 20, 20],
+      soft: [120, 120, 120],
+    });
+  }
+
+  drawReturnHint(style);
+  drawPoemEntranceOverlay(key);
+  drawingContext.enable(drawingContext.DEPTH_TEST);
+  pop();
+}
+
+function drawPoemEntranceOverlay(key) {
+  if (poemSceneFade >= 0.995) return;
+
+  const fade = easeInOutCubic(poemSceneFade);
+  const whiteScenes = ["romance", "listen", "elevation", "sonnet14"];
+  const tone = whiteScenes.includes(key) ? 255 : 0;
+
   noStroke();
+  rectMode(CORNER);
+  fill(tone, 255 * (1 - fade));
+  rect(0, 0, width, height);
+}
 
-  textAlign(CENTER);
+function poemLetters(poem) {
+  const text = `${poem.title || ""} ${poem.author || ""} ${poem.text || ""}`;
+  return text.replace(/\s+/g, "");
+}
 
+function drawPoemHeader(poem, style, ink, soft, align = CENTER) {
+  const title = poem.title || selectedStar.label;
+  textFont(nimbusFont);
+  fill(ink[0], ink[1], ink[2], ink[3] ?? 255);
+  noStroke();
+  textAlign(align, CENTER);
   textSize(style.titleSize);
-  text(title, width / 2, style.titleY);
+  text(title, align === LEFT ? style.bodyX : width / 2, style.titleY);
 
+  fill(soft[0], soft[1], soft[2], soft[3] ?? 255);
   textSize(style.authorSize);
-  fill(120);
-  text(poem.author, width / 2, style.authorY);
+  text(poem.author, align === LEFT ? style.bodyX : width / 2, style.authorY);
+  textFont(poemFont);
+}
 
-  fill(20);
-
-  textAlign(LEFT);
-
-  textSize(style.bodySize);
-
+function drawPoemBody(poem, style, ink, x, y, w, h, sizeOffset = 0) {
+  textFont(poemFont);
+  fill(ink[0], ink[1], ink[2], ink[3] ?? 255);
+  noStroke();
+  textAlign(LEFT, TOP);
+  textSize(style.bodySize + sizeOffset);
   textLeading(style.bodyLeading);
+  text(poem.text, x, y - poemScroll, w, h + poemScroll);
+}
 
-  text(
-    poem.text,
+function drawReturnHint(style) {
+  const key = selectedStar ? selectedStar.pageKey || selectedStar.label : "";
+  let hint = "Click anywhere to return";
+
+  if (key === "romance") {
+    const blocks = getPoemBlocks(getSelectedPoemPage());
+    hint =
+      romanceRevealCount < blocks.length
+        ? "Click to reveal"
+        : "Click anywhere to return";
+  } else if (key === "sonnet14") {
+    const lines = getPoemTextLines(getSelectedPoemPage());
+    hint =
+      sonnetRevealLines < lines.length
+        ? "Click to collect a line"
+        : "Click anywhere to return";
+  } else if (key === "listen") {
+    const sections = getListenSections(getSelectedPoemPage());
+    hint =
+      listenRevealSections < sections.length
+        ? "Click to complete text"
+        : "Click anywhere to return";
+  }
+
+  fill(130, 130, 130, 190);
+  noStroke();
+  textAlign(CENTER, CENTER);
+  textSize(style.hintSize);
+  textFont(nimbusFont);
+  text(hint, width / 2, height - 44);
+  textFont(poemFont);
+}
+
+function drawSimplePoem(poem, style, palette) {
+  background(palette.bg);
+  drawPoemHeader(poem, style, palette.ink, palette.soft);
+  drawPoemBody(
+    poem,
+    style,
+    palette.ink,
     style.bodyX,
     style.bodyY,
     width - style.bodyX - style.bodyRight,
     height - style.bodyY - style.bodyBottom
   );
+}
 
-  fill(140);
+function drawElevationPoem(poem, style) {
+  background(255);
+  drawPoemHeader(poem, style, [0, 0, 0], [90, 90, 90], LEFT);
+  drawElevationBlocks(poem, style);
+}
 
-  textSize(style.hintSize);
+function drawElevationBlocks(poem, style) {
+  const blocks = getPoemBlocks(poem);
+  const maxDist = min(width, height) * 0.36;
+  const twoColumns = width > 820;
+  const colW = twoColumns ? min(390, width * 0.34) : width - style.bodyX * 2;
+  const startY = style.bodyY + 10;
+  const rowGap = 142;
+  const leftX = style.bodyX;
+  const rightX = width - style.bodyX - colW;
 
-  textAlign(CENTER);
+  while (elevationBlockStates.length < blocks.length) {
+    const i = elevationBlockStates.length;
+    const origX = twoColumns && i % 2 === 1 ? rightX : leftX;
+    const origY = startY + floor(i / (twoColumns ? 2 : 1)) * rowGap;
 
-  text("Click anywhere to return", width / 2, height - 60);
+    elevationBlockStates.push({
+      x: origX,
+      y: origY,
+      size: max(13, style.bodySize - 2),
+      alpha: 0,
+    });
+  }
 
-  pop();
+  textFont(poemFont);
+  textAlign(LEFT, TOP);
+  noStroke();
+
+  for (let i = 0; i < blocks.length; i++) {
+    const state = elevationBlockStates[i];
+    const origX = twoColumns && i % 2 === 1 ? rightX : leftX;
+    const origY = startY + floor(i / (twoColumns ? 2 : 1)) * rowGap;
+    const blockCenterX = origX + colW * 0.5;
+    const blockCenterY = origY + 55;
+    const d = dist(blockCenterX, blockCenterY, mouseX, mouseY);
+    const pull = constrain(1 - d / maxDist, 0, 1);
+    const easedPull = pull * pull * (3 - 2 * pull);
+    const targetX = lerp(origX, mouseX - colW * 0.5, easedPull * 0.75);
+    const targetY = lerp(origY, mouseY - 46, easedPull * 0.75);
+    const targetSize = lerp(max(13, style.bodySize - 2), max(10, style.bodySize - 6), easedPull);
+    const targetAlpha = lerp(210, 255, easedPull);
+
+    state.x = lerp(state.x, targetX, 0.08);
+    state.y = lerp(state.y, targetY, 0.08);
+    state.size = lerp(state.size, targetSize, 0.08);
+    state.alpha = lerp(state.alpha, targetAlpha, 0.06);
+
+    drawDispersingTextBlock(
+      blocks[i],
+      state.x,
+      state.y,
+      colW,
+      state.size,
+      state.size * 1.42,
+      state.alpha,
+      i * 220
+    );
+  }
+}
+
+function drawDispersingTextBlock(block, baseX, baseY, maxW, size, leading, alpha, stateOffset) {
+  textFont(poemFont);
+  textAlign(LEFT, TOP);
+  textSize(size);
+  noStroke();
+
+  const lines = block.split("\n");
+  let stateIndex = stateOffset;
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const line = lines[lineIndex];
+    let x = baseX;
+    let y = baseY + lineIndex * leading;
+
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      const chW = textWidth(ch || " ");
+
+      if (x - baseX + chW > maxW && ch === " ") {
+        x = baseX;
+        y += leading;
+      }
+
+      while (elevationLetterStates.length <= stateIndex) {
+        elevationLetterStates.push({ ox: 0, oy: 0, phase: random(TWO_PI) });
+      }
+
+      const state = elevationLetterStates[stateIndex];
+      const d = dist(x, y, mouseX, mouseY);
+      const loosen = easeInOutCubic(constrain(1 - d / 150, 0, 1));
+      const direction = stateIndex * 1.618 + state.phase;
+      const targetX = cos(direction) * 24 * loosen + sin(frameCount * 0.024 + state.phase) * 5 * loosen;
+      const targetY = (12 + sin(direction) * 20) * loosen;
+
+      state.ox = lerp(state.ox, targetX, 0.075);
+      state.oy = lerp(state.oy, targetY, 0.075);
+
+      fill(0, alpha * poemSceneFade);
+      text(ch, x + state.ox, y + state.oy);
+      drawElevationLetterParticles(x, y, stateIndex, loosen, alpha);
+      x += chW;
+      stateIndex++;
+    }
+  }
+}
+
+function drawElevationLetterParticles(x, y, seed, loosen, alpha) {
+  if (loosen <= 0.03) return;
+
+  const count = 2 + floor(loosen * 4);
+  noStroke();
+
+  for (let i = 0; i < count; i++) {
+    const phase = seed * 0.73 + i * 2.17;
+    const fall = ((frameCount * (0.35 + i * 0.06) + seed * 3 + i * 19) % 42) * loosen;
+    const spread = sin(frameCount * 0.035 + phase) * 18 * loosen;
+    const px = x + cos(phase) * 8 * loosen + spread;
+    const py = y + sin(phase) * 4 * loosen + fall;
+    const particleAlpha = alpha * poemSceneFade * loosen * (0.32 + i * 0.08);
+    const size = 1 + loosen * 1.8 + (i % 2) * 0.4;
+
+    fill(0, particleAlpha);
+    circle(px, py, size);
+  }
+}
+
+function drawRomancePoem(poem, style) {
+  const blocks = getPoemBlocks(poem);
+  const revealProgress = blocks.length
+    ? constrain(romanceRevealCount / blocks.length, 0, 1)
+    : 1;
+  romanceVisualProgress = lerp(romanceVisualProgress, revealProgress, 0.055);
+  const allBlocksOpen = blocks.length > 0 && romanceRevealCount >= blocks.length;
+  romanceDarkProgress = lerp(romanceDarkProgress, allBlocksOpen ? 1 : 0, 0.028);
+  const darkProgress = smoothDarkProgress(romanceDarkProgress);
+  const pulse = allBlocksOpen ? sin(frameCount * 0.035) * 4 * darkProgress : 0;
+  const bgTone = lerp(244, 0, darkProgress);
+  const inkTone = contrastTone(bgTone);
+  const cloudTone = contrastTone(bgTone);
+
+  background(constrain(bgTone + pulse, 0, 255));
+  const lettersSource = poemLetters(poem);
+  const pixelScale = 7;
+  const cutoff = 0.52;
+  const t = millis() / 100000;
+  let index = 0;
+
+  textFont(poemFont);
+  textAlign(CENTER, CENTER);
+  for (let x = 0; x <= width; x += pixelScale) {
+    for (let y = 0; y <= height; y += pixelScale) {
+      const n = noise(x * 0.008 + t * 6, y * 0.008 + t * 1.6, t * 4);
+      if (n < cutoff) continue;
+
+      const alpha = map(n, cutoff, 0.72, 18, 150, true) * poemSceneFade;
+      fill(cloudTone, alpha * (0.55 + romanceVisualProgress * 0.45));
+      textSize(pixelScale * 1.22);
+      text(lettersSource[index % lettersSource.length], x, y);
+      index++;
+    }
+  }
+
+  drawRomanceStar(darkProgress, bgTone);
+  drawPoemHeader(poem, style, [inkTone, inkTone, inkTone], [inkTone, inkTone, inkTone, 170], LEFT);
+  drawRomanceBlocks(blocks, style, inkTone, bgTone);
+}
+
+function smoothDarkProgress(progress) {
+  const delayed = constrain((progress - 0.08) / 0.92, 0, 1);
+  return delayed * delayed * (3 - 2 * delayed);
+}
+
+function contrastTone(bgTone) {
+  return bgTone > 118 ? 0 : 255;
+}
+
+function getPoemBlocks(poem) {
+  return (poem.text || "")
+    .split(/\n\s*\n/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+}
+
+function getPoemTextLines(poem) {
+  return (poem.text || "")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+function getListenSections(poem) {
+  const lines = (poem.text || "").split("\n");
+  const marker = lines.map((line) => line.trim()).find(Boolean) || "";
+  const sections = [];
+  let current = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const startsNew = marker && trimmed === marker && current.length > 0;
+
+    if (startsNew) {
+      sections.push(current);
+      current = [];
+    }
+
+    current.push(line);
+  }
+
+  if (current.length) {
+    sections.push(current);
+  }
+
+  return sections;
+}
+
+function drawRomanceBlocks(blocks, style, inkTone, bgTone) {
+  const visible = min(romanceRevealCount, blocks.length);
+  const bodySize = max(12, style.bodySize - 3);
+  const bodyLeading = max(18, style.bodyLeading - 8);
+  const twoColumns = width > 980;
+  const colW = twoColumns ? min(330, width * 0.27) : min(430, width - style.bodyX * 2);
+  const rowGap = max(126, bodyLeading * 5.2);
+  const startY = style.bodyY + 6;
+  const leftX = twoColumns ? width - colW * 2 - 116 : width - colW - 70;
+  const rightX = width - colW - 70;
+
+  textFont(poemFont);
+  textAlign(LEFT, TOP);
+  textSize(bodySize);
+  textLeading(bodyLeading);
+  noStroke();
+
+  while (romanceBlockFades.length < blocks.length) {
+    romanceBlockFades.push(0);
+  }
+
+  for (let i = 0; i < visible; i++) {
+    romanceBlockFades[i] = lerp(romanceBlockFades[i], 1, 0.075);
+    const fade = easeInOutCubic(romanceBlockFades[i]);
+    const blockAlpha = map(i, 0, max(1, blocks.length - 1), 185, 255);
+    const alpha =
+      (bgTone > 92 ? min(255, blockAlpha + 35) : blockAlpha) *
+      fade *
+      poemSceneFade;
+    const col = twoColumns ? i % 2 : 0;
+    const row = twoColumns ? floor(i / 2) : i;
+    const xBase = col === 0 ? leftX : rightX;
+    const xOffset = (col === 0 ? -1 : 1) * sin(i * 1.7) * 8;
+    const x = xBase + xOffset;
+    const y = startY + row * rowGap;
+    const revealY = y + (1 - fade) * 18;
+
+    fill(inkTone, alpha);
+    text(blocks[i], x, revealY, colW, rowGap - 8);
+  }
+}
+
+function drawRomanceStar(progress, bgTone) {
+  if (!romanceStar) {
+    resetRomanceStar();
+  }
+
+  romanceStar.age += deltaTime / 1000;
+  const lifeProgress = romanceStar.age / romanceStar.life;
+
+  if (lifeProgress >= 1) {
+    resetRomanceStar();
+    return;
+  }
+
+  const fade = sin(PI * lifeProgress);
+  const tone = contrastTone(bgTone);
+  const alpha = fade * (bgTone > 118 ? 130 : 245) * poemSceneFade;
+  const pulse = 1 + sin(frameCount * 0.05 + romanceStar.phase) * 0.12;
+
+  noStroke();
+  fill(tone, alpha * 0.1);
+  circle(romanceStar.x, romanceStar.y, romanceStar.size * 15 * pulse);
+  fill(tone, alpha * 0.2);
+  circle(romanceStar.x, romanceStar.y, romanceStar.size * 7 * pulse);
+  fill(tone, alpha);
+  circle(romanceStar.x, romanceStar.y, romanceStar.size * pulse);
+}
+
+function resetRomanceStar() {
+  romanceStar = {
+    x: random(width * 0.12, width * 0.88),
+    y: random(height * 0.16, height * 0.84),
+    size: random(3.5, 7.5),
+    age: 0,
+    life: random(2.4, 4.8),
+    phase: random(TWO_PI),
+  };
+}
+
+function drawSonnetPoem(poem, style) {
+  background(246);
+  const lettersSource = poemLetters(poem);
+  const cx = width * 0.5;
+  const cy = height * 0.52;
+  const radius = min(width, height) * 0.28;
+  const lines = getPoemTextLines(poem);
+  sonnetRevealProgress = lerp(sonnetRevealProgress, sonnetRevealLines, 0.08);
+  const collected = lines.length ? constrain(sonnetRevealProgress / lines.length, 0, 1) : 1;
+  const total = min(lettersSource.length, 620);
+  const t = frameCount * 0.01;
+
+  stroke(0, 16 * (1 - collected * 0.55) * poemSceneFade);
+  noFill();
+  for (let r = 0.25; r <= 1.05; r += 0.16) {
+    beginShape();
+    for (let a = 0; a <= TWO_PI + 0.08; a += 0.08) {
+      const warp = sin(a * 7 + t * 2.2 + r * 8) * 12 + cos(a * 3 - t) * 7;
+      vertex(cx + cos(a) * (radius * r + warp), cy + sin(a) * (radius * r + warp * 0.8));
+    }
+    endShape();
+  }
+
+  noStroke();
+  textAlign(CENTER, CENTER);
+  for (let i = 0; i < total; i++) {
+    const a = (i / total) * TWO_PI * 9 + t * (1 + (i % 5) * 0.04);
+    const rose = cos(a * 2.5 + t + i * 0.01);
+    const ring = 0.24 + 0.78 * ((i % 47) / 47);
+    const wave = sin(t * 2 + i * 0.19) * 20;
+    const collapse = collected * (0.1 + (i % 7) * 0.018);
+    const x = lerp(cx + cos(a) * (radius * ring + rose * 34 + wave), cx, collapse);
+    const y = lerp(cy + sin(a * 0.92) * (radius * ring + rose * 20 + wave * 0.45), cy, collapse);
+    const alpha = map(ring, 0.24, 1.02, 220, 55) * (1 - collected) * poemSceneFade;
+    const sizePulse = sin(t * 3 + i * 0.23) * 1.5;
+
+    fill(0, alpha);
+    textSize(7 + ring * 8 + sizePulse);
+    text(lettersSource[i], x, y);
+  }
+
+  drawPoemHeader(poem, style, [0, 0, 0, 255 * poemSceneFade], [95, 95, 95, 210 * poemSceneFade], CENTER);
+  drawCollectedSonnetLines(lines, style);
+}
+
+function drawCollectedSonnetLines(lines, style) {
+  const lineSize = max(12, style.bodySize - 5);
+  const lineGap = max(20, style.bodyLeading - 7);
+  const startY = height * 0.5 - (lines.length * lineGap) * 0.5;
+  const w = min(width * 0.72, 760);
+  const x = width * 0.5 - w * 0.5;
+
+  textFont(poemFont);
+  textAlign(CENTER, TOP);
+  textSize(lineSize);
+  noStroke();
+
+  for (let i = 0; i < lines.length; i++) {
+    const reveal = easeInOutCubic(constrain(sonnetRevealProgress - i, 0, 1));
+    if (reveal <= 0) continue;
+
+    const gatherY = startY + i * lineGap + (1 - reveal) * 32;
+    const gatherX = x + sin(frameCount * 0.02 + i) * 18 * (1 - reveal);
+    fill(0, 230 * reveal * poemSceneFade);
+    text(lines[i], gatherX, gatherY, w, lineGap * 1.25);
+  }
+}
+
+function drawListenPoem(poem, style) {
+  background(255);
+  const t = frameCount * 0.018;
+
+  drawListenCursorStars(t);
+
+  drawPoemHeader(poem, style, [8, 8, 8, 240 * poemSceneFade], [55, 55, 55, 190 * poemSceneFade], LEFT);
+  drawListenParticleText(poem, style);
+}
+
+function drawListenCursorStars(t) {
+  listenFollow = lerp(listenFollow, 1, 0.0055);
+  listenCursorX = lerp(listenCursorX, mouseX, 0.018);
+  listenCursorY = lerp(listenCursorY, mouseY, 0.018);
+
+  noStroke();
+
+  fill(0, 10 * poemSceneFade);
+  circle(listenCursorX, listenCursorY, 170 + sin(t * 1.1) * 16);
+  fill(0, 18 * poemSceneFade);
+  circle(listenCursorX, listenCursorY, 70 + sin(t * 1.7) * 8);
+
+  for (let i = 0; i < 86; i++) {
+    const col = i % 12;
+    const row = floor(i / 12);
+    const originX = width * (0.08 + col * 0.076) + sin(i * 2.1) * 26;
+    const originY = height * (0.11 + row * 0.108) + cos(i * 1.7) * 20;
+    const pull = listenFollow * (0.11 + (i % 5) * 0.012);
+    const orbit = sin(t * 0.55 + i) * (4 + (i % 4) * 1.4);
+    const x = lerp(originX, listenCursorX, pull) + cos(i * 2.399 + t * 0.35) * orbit;
+    const y = lerp(originY, listenCursorY, pull) + sin(i * 2.399 + t * 0.28) * orbit * 0.8;
+    const pulse = sin(t * 2.1 + i * 0.57) * 0.5 + 0.5;
+    const alpha = (24 + pulse * 82) * poemSceneFade;
+    const size = 1 + pulse * 2.2;
+
+    fill(0, alpha * 0.06);
+    circle(x, y, size * 9);
+    fill(0, alpha);
+    circle(x, y, size);
+  }
+}
+
+function drawListenParticleText(poem, style) {
+  const sections = getListenSections(poem);
+  const x = width * 0.46;
+  const y = 165 - poemScroll;
+  const lineSize = max(11, style.bodySize - 5);
+  const lineGap = max(18, style.bodyLeading - 8);
+  const maxW = width * 0.43;
+  listenRevealProgress = lerp(listenRevealProgress, listenRevealSections, 0.055);
+
+  textFont(poemFont);
+  textAlign(LEFT, TOP);
+  textSize(lineSize);
+  textLeading(lineGap);
+  noStroke();
+
+  let globalLine = 0;
+
+  for (let sectionIndex = 0; sectionIndex < sections.length; sectionIndex++) {
+    const section = sections[sectionIndex];
+    const sectionProgress = constrain(listenRevealProgress - sectionIndex, 0, 1);
+
+    if (sectionProgress <= 0) {
+      globalLine += section.length;
+      continue;
+    }
+
+    for (let localLine = 0; localLine < section.length; localLine++) {
+      const line = section[localLine];
+      const lineY = y + globalLine * lineGap;
+      const activeLines = max(1, section.filter((item) => item.trim() !== "").length);
+      const lineDelay = localLine / max(1, activeLines + 1.5);
+      const reveal = easeInOutCubic(constrain((sectionProgress - lineDelay) / 0.22, 0, 1));
+
+      globalLine++;
+
+      if (lineY < 130 || lineY > height - 90) continue;
+      if (line.trim() === "") continue;
+
+      if (reveal < 0.985) {
+        const particleCount = min(52, max(14, floor(line.length * 1.15)));
+        const textW = min(maxW, textWidth(line));
+        for (let p = 0; p < particleCount; p++) {
+          const k = particleCount <= 1 ? 0 : p / (particleCount - 1);
+          const targetX = x + k * textW;
+          const targetY = lineY + lineSize * 0.62;
+          const seed = sectionIndex * 97 + localLine * 41 + p * 13;
+          const starX = width * (0.08 + ((seed % 17) / 16) * 0.84) + sin(seed) * 18;
+          const starY = height * (0.12 + (((seed * 7) % 19) / 18) * 0.76) + cos(seed) * 16;
+          const arc = sin(k * PI) * 70 * (1 - reveal);
+          const swirl = sin(frameCount * 0.028 + seed) * 26 * (1 - reveal);
+          const px = lerp(starX, targetX, reveal) + cos(seed) * arc + swirl;
+          const py = lerp(starY, targetY, reveal) - arc * 0.55 + cos(frameCount * 0.022 + seed) * 18 * (1 - reveal);
+          const alpha = sin((1 - reveal) * PI) * 155 * poemSceneFade;
+          const size = 1.1 + sin(frameCount * 0.04 + seed) * 0.4 + (1 - reveal) * 2.8;
+
+          fill(0, alpha * 0.07);
+          circle(px, py, size * 8);
+          fill(0, alpha);
+          circle(px, py, size);
+        }
+      }
+
+      fill(34, 34, 34, 220 * reveal * poemSceneFade);
+      text(line, x, lineY, maxW, lineGap * 1.2);
+    }
+  }
+}
+
+function drawEveningStarPoem(poem, style) {
+  background(0);
+  const horizon = height * 0.58;
+  const t = frameCount * 0.012;
+  const gradientFade = easeInOutCubic(constrain(poemSceneTime / 2.4, 0, 1));
+
+  noStroke();
+  for (let y = 0; y < height; y += 3) {
+    const k = y / height;
+    const tone = lerp(35, 0, k) * gradientFade;
+    fill(tone, 255);
+    rect(0, y, width, 4);
+  }
+
+  fill(255, 230 * gradientFade);
+  circle(width * 0.78, height * 0.23, 8);
+  fill(255, 34 * gradientFade);
+  circle(width * 0.78, height * 0.23, 64);
+
+  drawEveningGeneratedAnimation(horizon, t);
+
+  drawPoemHeader(poem, style, [255, 255, 255, 255 * poemSceneFade], [170, 170, 170, 205 * poemSceneFade], LEFT);
+  drawEveningFadingBlocks(poem, style);
+}
+
+function drawEveningFadingBlocks(poem, style) {
+  const blocks = getPoemBlocks(poem);
+  const size = max(11, style.bodySize - 6);
+  const leading = max(18, style.bodyLeading - 8);
+  const colW = min(width * 0.48, 620);
+  let y = style.bodyY - poemScroll;
+
+  textFont(poemFont);
+  textAlign(LEFT, TOP);
+  textSize(size);
+  textLeading(leading);
+  noStroke();
+
+  for (let i = 0; i < blocks.length; i++) {
+    const reveal = easeInOutCubic(constrain((poemSceneTime - 0.45 - i * 0.55) / 1.1, 0, 1));
+    const blockHeight = getTextBlockHeight(blocks[i], size, leading, colW);
+
+    if (y + blockHeight > style.authorY && y < height - 80) {
+      fill(255, 215 * reveal * poemSceneFade);
+      text(blocks[i], style.bodyX, y + (1 - reveal) * 14, colW, blockHeight + 20);
+    }
+
+    y += blockHeight + 20;
+  }
+}
+
+function getTextBlockHeight(block, size, leading, colW) {
+  const lines = block.split("\n");
+  let count = 0;
+
+  for (const line of lines) {
+    count += max(1, ceil((line.length * size * 0.52) / colW));
+  }
+
+  return count * leading;
+}
+
+function drawEveningGeneratedAnimation(horizon, t) {
+  while (eveningParticles.length < 120) {
+    eveningParticles.push(createEveningParticle(true));
+  }
+
+  strokeWeight(1);
+  for (let i = 0; i < 18; i++) {
+    const anchorX = width * (0.1 + i * 0.047);
+    const anchorY = height * (0.2 + ((i * 7) % 9) * 0.045);
+    const tipX = anchorX + sin(t * 1.4 + i) * 42;
+    const tipY = horizon + cos(t + i * 0.7) * 38;
+    const alpha = (12 + sin(t * 1.8 + i) * 7) * poemSceneFade;
+
+    stroke(255, alpha);
+    noFill();
+    beginShape();
+    for (let s = 0; s <= 1.001; s += 0.08) {
+      const bend = sin(s * PI + t * 2 + i) * 28;
+      vertex(lerp(anchorX, tipX, s) + bend, lerp(anchorY, tipY, s));
+    }
+    endShape();
+  }
+
+  noStroke();
+  for (let i = 0; i < eveningParticles.length; i++) {
+    const p = eveningParticles[i];
+    p.y += p.speed;
+    p.x += sin(t * 1.3 + p.phase) * p.drift;
+
+    if (p.y > height + 18 || p.x < -30 || p.x > width + 30) {
+      eveningParticles[i] = createEveningParticle(false);
+      continue;
+    }
+
+    const wave = sin(t * 2 + p.phase) * 0.5 + 0.5;
+    const alpha = (18 + wave * 76) * poemSceneFade;
+    const glow = p.size * (7 + wave * 8);
+
+    fill(255, alpha * 0.08);
+    circle(p.x, p.y, glow);
+    fill(255, alpha);
+    circle(p.x, p.y, p.size);
+  }
+}
+
+function createEveningParticle(scattered) {
+  return {
+    x: random(width * 0.05, width * 0.95),
+    y: scattered ? random(height * 0.1, height * 0.95) : random(-40, height * 0.15),
+    size: random(0.9, 2.6),
+    speed: random(0.08, 0.34),
+    drift: random(-0.22, 0.22),
+    phase: random(TWO_PI),
+  };
 }
 
 function getScreenPointFromMatrix() {
@@ -1269,6 +2006,38 @@ function handleConstellationClick() {
 }
 
 function handlePoemClick() {
+  const key = selectedStar ? selectedStar.pageKey || selectedStar.label : "";
+
+  if (key === "romance") {
+    const poem = getSelectedPoemPage();
+    const blocks = getPoemBlocks(poem);
+
+    if (romanceRevealCount < blocks.length) {
+      romanceRevealCount++;
+      return;
+    }
+
+    if (romanceDarkProgress < 0.96) {
+      return;
+    }
+  } else if (key === "sonnet14") {
+    const poem = getSelectedPoemPage();
+    const lines = getPoemTextLines(poem);
+
+    if (sonnetRevealLines < lines.length) {
+      sonnetRevealLines++;
+      return;
+    }
+  } else if (key === "listen") {
+    const poem = getSelectedPoemPage();
+    const sections = getListenSections(poem);
+
+    if (listenRevealSections < sections.length) {
+      listenRevealSections++;
+      return;
+    }
+  }
+
   currentScene = CONSTELLATION;
   soundEvent("stopProjectSound");
 

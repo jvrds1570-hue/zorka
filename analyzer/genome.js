@@ -65,7 +65,7 @@ window.PoemGenome = (() => {
       glassVolume: lerp(0.018, 0.075, variety * 0.5 + analysis.vowelRatio * 0.5),
       particleVolume: lerp(0.012, 0.055, punctuation * 0.65 + analysis.intensity * 0.35),
       harmonyVolume: lerp(0.014, 0.052, longWords * 0.35 + structure * 0.35),
-      noiseVolume: lerp(0.006, 0.035, cyrillic * 0.25 + punctuation * 0.45),
+      noiseVolume: 0,
       shimmer: lerp(0.15, 0.9, analysis.vowelRatio * 1.8),
       roughness: lerp(0.05, 0.75, repetition * 0.5 + structure * 0.4),
       particleRate: tempo,

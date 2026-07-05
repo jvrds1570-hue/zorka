@@ -9,23 +9,19 @@ window.PoemDrone = class PoemDrone {
     const baseAmp = genome.droneVolume * masterVolume;
     const oscA = new p5.Oscillator("sine");
     const oscB = new p5.Oscillator("triangle");
-    const noise = new p5.Noise("pink");
 
     oscA.freq(genome.root);
     oscB.freq(genome.fifth + genome.roughness * 5);
     oscA.amp(0);
     oscB.amp(0);
-    noise.amp(0);
 
     oscA.start();
     oscB.start();
-    noise.start();
 
     oscA.amp(baseAmp, genome.fadeIn);
     oscB.amp(baseAmp * 0.42, genome.fadeIn * 1.2);
-    noise.amp(genome.noiseVolume * masterVolume, genome.fadeIn * 1.4);
 
-    this.nodes = [oscA, oscB, noise];
+    this.nodes = [oscA, oscB];
   }
 
   update(genome, elapsed) {
