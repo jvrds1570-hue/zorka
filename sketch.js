@@ -1022,8 +1022,11 @@ drawConstellationStars(constellationExit);
 
   if (t >= 1) {
     currentScene = POEM;
-    soundEvent("setProjectSoundScene", "poem");
-    soundEvent("playPoemEnterSound");
+    soundEvent(
+      "startPoemSound",
+      getSelectedPoemPage(),
+      selectedStar ? selectedStar.pageKey || selectedStar.label : "poem"
+    );
   }
 }
 
@@ -1034,7 +1037,17 @@ function drawEmptySpace() {
 
   if (emptyTimer > 1800) {
     currentScene = POEM;
+    soundEvent(
+      "startPoemSound",
+      getSelectedPoemPage(),
+      selectedStar ? selectedStar.pageKey || selectedStar.label : "poem"
+    );
   }
+}
+
+function getSelectedPoemPage() {
+  if (!selectedStar) return null;
+  return selectedStar.poemPage || selectedStar.poem;
 }
 
 function applyEditablePoemPages() {
@@ -1094,7 +1107,9 @@ function drawPoemPage() {
 
   if (!selectedStar) return;
 
-  let poem = selectedStar.poemPage || selectedStar.poem;
+  soundEvent("updateProjectSound");
+
+  let poem = getSelectedPoemPage();
   const style = getPoemPageStyle(poem);
   const title = poem.title || selectedStar.label;
 
@@ -1255,7 +1270,7 @@ function handleConstellationClick() {
 
 function handlePoemClick() {
   currentScene = CONSTELLATION;
-  soundEvent("setProjectSoundScene", "constellation");
+  soundEvent("stopProjectSound");
 
   transitionStar = null;
   sceneProgress = 0;
