@@ -19,6 +19,10 @@ let transitionStarScreen = {
 };
 let startRotX;
 let startRotY;
+let exitRotStartX = 0;
+let exitRotStartY = 0;
+let exitRotTargetX = 0;
+let exitRotTargetY = 0;
 
 let targetRotTransitionX = 0;
 let targetRotTransitionY = 0;
@@ -70,8 +74,18 @@ function preload() {
   font = loadFont("nimbus-mono.bold.otf");
 }
 
+function soundEvent(name, ...args) {
+  if (typeof window === "undefined") return;
+
+  const fn = window[name];
+  if (typeof fn === "function") {
+    fn(...args);
+  }
+}
+
 function setup() {
   createCanvas(windowWidth, windowHeight, WEBGL);
+  soundEvent("initProjectSound");
 
   textFont(font);
   textWrap(CHAR);
@@ -258,6 +272,7 @@ function setup() {
   ];
 
   const ANCHOR_STAR_COUNT = 5;
+  applyEditablePoemPages();
   for (let i = 0; i < supportPositions.length; i++) {
     const star = constellationStars[i + ANCHOR_STAR_COUNT];
 
@@ -383,6 +398,7 @@ function drawIntro() {
 
       // Switch to constellation scene
       currentScene = CONSTELLATION;
+      soundEvent("setProjectSoundScene", "constellation");
     }
   }
 
@@ -808,13 +824,17 @@ function drawConstellationStars(extraOffsetY = 0) {
   const starsOffsetY = lerp(height + 350, 0, easedStars);
   const starsAlpha = 255 * easedStars;
 
-  if (currentScene !== STAR_EXIT) {
-  constellationRotX = lerp(constellationRotX, targetRotX, 0.035);
-  constellationRotY = lerp(constellationRotY, targetRotY, 0.035);
-}
+  if (currentScene === STAR_EXIT) {
+    const exitRotationProgress = easeInOutCubic(sceneProgress);
+    rotationX = lerp(exitRotStartX, exitRotTargetX, exitRotationProgress);
+    rotationY = lerp(exitRotStartY, exitRotTargetY, exitRotationProgress);
+  } else {
+    constellationRotX = lerp(constellationRotX, targetRotX, 0.035);
+    constellationRotY = lerp(constellationRotY, targetRotY, 0.035);
 
-rotationX = constellationRotX + cos(frameCount * 0.0012) * 0.01;
-rotationY = constellationRotY + sin(frameCount * 0.0015) * 0.015;
+    rotationX = constellationRotX + cos(frameCount * 0.0012) * 0.01;
+    rotationY = constellationRotY + sin(frameCount * 0.0015) * 0.015;
+  }
 
 applyConstellationTransform(starsOffsetY + extraOffsetY);
 
@@ -934,11 +954,16 @@ function beginTransition(star) {
     size: lerp(star.size ?? 1.5, 4.5, star.focus || 0),
   };
 
-  startRotX = constellationRotX;
-  startRotY = constellationRotY;
+  startRotX = rotationX;
+  startRotY = rotationY;
+  exitRotStartX = rotationX;
+  exitRotStartY = rotationY;
+  exitRotTargetX = rotationX * 0.82;
+  exitRotTargetY = rotationY * 0.82;
 
   currentScene = STAR_EXIT;
   sceneProgress = 0;
+  soundEvent("playStarFallSound", STAR_EXIT_TIME);
 }
 
 function drawStarExit() {
@@ -997,6 +1022,8 @@ drawConstellationStars(constellationExit);
 
   if (t >= 1) {
     currentScene = POEM;
+    soundEvent("setProjectSoundScene", "poem");
+    soundEvent("playPoemEnterSound");
   }
 }
 
@@ -1010,12 +1037,66 @@ function drawEmptySpace() {
   }
 }
 
+function applyEditablePoemPages() {
+  if (typeof window === "undefined" || !window.POEM_PAGES) return;
+
+  const pageKeys = [
+    "romance",
+    "listen",
+    "elevation",
+    "sonnet14",
+    "eveningStar",
+  ];
+
+  for (let i = 0; i < pageKeys.length; i++) {
+    const star = constellationStars[i];
+    const page = window.POEM_PAGES[pageKeys[i]];
+
+    if (!star || !page) continue;
+
+    star.pageKey = pageKeys[i];
+    star.poemPage = {
+      ...star.poem,
+      ...page,
+    };
+
+    if (page.label) {
+      star.label = page.label;
+    }
+  }
+}
+
+function getPoemPageStyle(poem) {
+  const defaultStyle =
+    typeof window !== "undefined" && window.POEM_PAGE_STYLE
+      ? window.POEM_PAGE_STYLE
+      : {};
+  const customStyle = poem && poem.style ? poem.style : {};
+
+  return {
+    titleY: defaultStyle.titleY ?? 80,
+    authorY: defaultStyle.authorY ?? 120,
+    bodyX: defaultStyle.bodyX ?? 140,
+    bodyY: defaultStyle.bodyY ?? 180,
+    bodyRight: defaultStyle.bodyRight ?? 140,
+    bodyBottom: defaultStyle.bodyBottom ?? 250,
+    titleSize: defaultStyle.titleSize ?? 38,
+    authorSize: defaultStyle.authorSize ?? 18,
+    bodySize: defaultStyle.bodySize ?? 20,
+    bodyLeading: defaultStyle.bodyLeading ?? 34,
+    hintSize: defaultStyle.hintSize ?? 14,
+    ...customStyle,
+  };
+}
+
 function drawPoemPage() {
   background(255);
 
   if (!selectedStar) return;
 
-  let poem = selectedStar.poem;
+  let poem = selectedStar.poemPage || selectedStar.poem;
+  const style = getPoemPageStyle(poem);
+  const title = poem.title || selectedStar.label;
 
   push();
 
@@ -1026,26 +1107,32 @@ function drawPoemPage() {
 
   textAlign(CENTER);
 
-  textSize(38);
-  text(selectedStar.label, width / 2, 80);
+  textSize(style.titleSize);
+  text(title, width / 2, style.titleY);
 
-  textSize(18);
+  textSize(style.authorSize);
   fill(120);
-  text(poem.author, width / 2, 120);
+  text(poem.author, width / 2, style.authorY);
 
   fill(20);
 
   textAlign(LEFT);
 
-  textSize(20);
+  textSize(style.bodySize);
 
-  textLeading(34);
+  textLeading(style.bodyLeading);
 
-  text(poem.text, 140, 180, width - 280, height - 250);
+  text(
+    poem.text,
+    style.bodyX,
+    style.bodyY,
+    width - style.bodyX - style.bodyRight,
+    height - style.bodyY - style.bodyBottom
+  );
 
   fill(140);
 
-  textSize(14);
+  textSize(style.hintSize);
 
   textAlign(CENTER);
 
@@ -1088,6 +1175,8 @@ function mouseWheel(event) {
 }
 
 function mousePressed() {
+  soundEvent("ensureProjectSound");
+
   if (currentScene === INTRO) {
     handleIntroClick();
     return;
@@ -1126,6 +1215,7 @@ function handleIntroClick() {
   if (inside) {
     transition = true;
     scene2Time = 0;
+    soundEvent("setProjectSoundScene", "introTransition");
   }
 }
 
@@ -1165,6 +1255,7 @@ function handleConstellationClick() {
 
 function handlePoemClick() {
   currentScene = CONSTELLATION;
+  soundEvent("setProjectSoundScene", "constellation");
 
   transitionStar = null;
   sceneProgress = 0;
