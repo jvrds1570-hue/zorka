@@ -1,58 +1,64 @@
 let font;
+const INTRO = 0;
+const CONSTELLATION = 1;
+const STAR_EXIT = 2;
+const EMPTY_SPACE = 3;
+const POEM = 4;
+let transitionStar = null;
+let currentScene = INTRO;
+let poemTransition = 0;
+let transitionTimer = 0;
+let transitionProgress = 0;
+let phaseTimer = 0;
+let sceneProgress = 0;
+let emptyTimer = 0;
+let transitionStarScreen = {
+  x: 0,
+  y: 0,
+  size: 4,
+};
+let startRotX;
+let startRotY;
 
+let targetRotTransitionX = 0;
+let targetRotTransitionY = 0;
+
+let transitionParticles = [];
 let letters = [];
 let particles = [];
-
 let frozen = false;
 let freezeProgress = 0;
-
 let hoverAnim = 0;
-
 let transition = false;
-let transitionProgress = 0;
-
 let starReleased = false;
-
 let cursorTransition = 0;
 let cursorTransitionActive = false;
-
 let x = 0;
 let y = 50;
-
 let glowPulse = 0;
-
-let poemAlpha = 0;
-
 let constellationStars = [];
 let constellationEdges = [];
-
 const SUPPORT_STAR_COUNT = 18;
 const CONNECTION_DISTANCE = 30;
 const MAX_CONNECTIONS_PER_STAR = 2;
-
 let bgStars = [];
-
 let constellationRotX = 0;
 let constellationRotY = 0;
-
+let rotationX = 0;
+let rotationY = 0;
 let targetRotX = 0;
 let targetRotY = 0;
-
 let scene2Time = 0;
-
 let constellationAlpha = 0;
-
 let selectedStar = null;
 let labelHitAreas = [];
-
-let poemScroll = 0;
-let poemScrollMax = 0;
-
+let swipeProgress = 0;
+const SWIPE_DISTANCE = 220; // try 180–250
 const WORD_HOLD_TIME = 0.8; // word stays visible first
 const WORD_FADE_TIME = 2.5; // slow fade-out
 const STARS_ENTER_DELAY = 1.4;
 const STARS_ENTER_TIME = 1.4;
-
+const STAR_EXIT_TIME = 2.1;
 const button = {
   x: -100,
   y: 50,
@@ -75,52 +81,52 @@ function setup() {
   letters = [
     {
       char: "z",
-      size: 250,
+      size: 125,
       sx: -1050,
       sy: 1050,
       sz: -700,
-      tx: -400,
-      ty: 50,
+      tx: -200,
+      ty: 30,
       tz: 0,
     },
     {
       char: "O",
-      size: 300,
+      size: 150,
       sx: -1350,
       sy: -550,
       sz: -300,
-      tx: -270,
-      ty: 50,
+      tx: -135,
+      ty: 30,
       tz: 0,
     },
     {
       char: "R",
-      size: 200,
+      size: 100,
       sx: 1300,
       sy: 150,
       sz: -200,
-      tx: -95,
-      ty: -5,
+      tx: -47,
+      ty: 0,
       tz: 0,
     },
     {
       char: "k",
-      size: 350,
+      size: 175,
       sx: 1020,
       sy: -1200,
       sz: -300,
-      tx: 0,
+      tx: 2,
       ty: 50,
       tz: 0,
     },
     {
       char: "a",
-      size: 300,
+      size: 100,
       sx: -1620,
       sy: 270,
       sz: -400,
-      tx: 195,
-      ty: 80,
+      tx: 85,
+      ty: 30,
       tz: 0,
     },
   ];
@@ -130,7 +136,6 @@ function setup() {
   const z4 = random(-150, 150);
   const z5 = random(-150, 150);
   const z6 = random(-150, 150);
-  const z7 = random(-150, 150);
 
   constellationStars = [
     {
@@ -227,27 +232,6 @@ function setup() {
           "Зоре моя вечірняя,\nЗійди над горою,\nПоговорим тихесенько\nВ неволі з тобою.\n\nРозкажи, як за горою\nСонечко сідає.\nЯк у Дніпра веселочка\nВоду позичає.\n\nЯк широка сокорина\nВіти розпустила...\nА над самою водою\nВерба похилилась;\n\nАж по воді розіслала\nЗеленії віти,\nА на вітах гойдаються\nНехрищені діти.\n\nЯк у полі на могилі\nВовкулак ночує,\nА сич в лісі та на стрісі\nНедолю віщує.\n\nЯк сон-трава при долині\nВночі розцвітає...\nА про людей... Та нехай їм.\nЯ їх, добрих, знаю.\n\nДобре знаю. Зоре моя!\nМій друже єдиний!\nІ хто знає, що діється\nВ нас на Україні?\n\nА я знаю. І розкажу\nТобі; й спать не ляжу.\nА ти завтра тихесенько\nБогові розкажеш.",
       },
     },
-    {
-      x: 60,
-      y: 170,
-      z: z7,
-      z2,
-      label: "Another text",
-      labelOffsetX: 18,
-      labelOffsetY: -12,
-
-      isAnchor: true,
-      size: 3.2,
-      brightness: 255,
-      alpha: 0,
-
-      focus: 0,
-
-      poem: {
-        author: "",
-        text: "",
-      },
-    },
   ];
 
   createSupportStars();
@@ -273,7 +257,7 @@ function setup() {
     [140, 200, 250],
   ];
 
-  const ANCHOR_STAR_COUNT = 6;
+  const ANCHOR_STAR_COUNT = 5;
   for (let i = 0; i < supportPositions.length; i++) {
     const star = constellationStars[i + ANCHOR_STAR_COUNT];
 
@@ -349,6 +333,31 @@ function createSupportStars() {
 }
 
 function draw() {
+  switch (currentScene) {
+    case INTRO:
+      drawIntro();
+      break;
+
+    case CONSTELLATION:
+      drawConstellation();
+      break;
+
+    case STAR_EXIT:
+      drawStarExit();
+      break;
+
+    case EMPTY_SPACE:
+      drawEmptySpace();
+      break;
+
+    case POEM:
+      drawPoemPage();
+      break;
+  }
+}
+
+function drawIntro() {
+  // ---------- transition timers ----------
   if (transition) {
     scene2Time += deltaTime / 1000;
   }
@@ -369,17 +378,29 @@ function draw() {
     if (cursorTransition >= 1) {
       x = mouseX - width / 2;
       y = mouseY - height / 2;
+
       starReleased = true;
+
+      // Switch to constellation scene
+      currentScene = CONSTELLATION;
     }
   }
 
+  // ---------- background ----------
   let bg = lerp(255, 0, transitionProgress);
   background(bg);
 
+  // ---------- swipe animation ----------
   if (!frozen) {
-    let progress = constrain(map(mouseX, 0, width, 0, 1), 0, 1);
+    // Original version:
+    // let progress = constrain(map(mouseX,0,width,0,1),0,1);
 
-    freezeProgress = lerp(freezeProgress, progress, 0.1);
+    // More sensitive version:
+    swipeProgress += abs(movedX);
+
+    let progress = constrain(swipeProgress / SWIPE_DISTANCE, 0, 1);
+
+    freezeProgress = lerp(freezeProgress, progress, 0.15);
 
     if (freezeProgress > 0.99) {
       freezeProgress = 1;
@@ -387,6 +408,7 @@ function draw() {
     }
   }
 
+  // ---------- hover button ----------
   let hovering = false;
 
   if (frozen && !transition) {
@@ -402,26 +424,33 @@ function draw() {
 
   hoverAnim = lerp(hoverAnim, hovering ? 1 : 0, 0.15);
 
+  // ---------- word ----------
   drawLetterParticles();
 
+  // ---------- stars ----------
   if (frozen) {
     drawBackgroundStars();
   }
 
+  // ---------- center star ----------
   if (!cursorTransitionActive) {
     drawCenterStar();
   } else if (!starReleased) {
     drawStarTransition();
   }
+}
 
-  if (starReleased && scene2Time >= STARS_ENTER_DELAY) {
-    drawStarCursor();
-    constellationAlpha = lerp(constellationAlpha, 255, 0.02);
+function drawConstellation() {
+  scene2Time += deltaTime / 1000;
 
-    drawPoem();
+  background(0);
 
-    drawPoemInfo();
-  }
+  drawBackgroundStars();
+  drawStarCursor();
+
+  constellationAlpha = lerp(constellationAlpha, 255, 0.02);
+
+  drawConstellationStars();
 }
 
 function rangeProgress(value, start, duration) {
@@ -493,7 +522,7 @@ function drawWordAndParticles(offsetY, alphaMultiplier, scaleValue, liftY) {
 
     for (let p of particles) {
       let x = lerp(p.x, p.tx, freezeProgress);
-let y = lerp(p.y, p.ty, freezeProgress);
+      let y = lerp(p.y, p.ty, freezeProgress);
       let z = lerp(p.z, p.tz, freezeProgress);
 
       push();
@@ -753,7 +782,20 @@ function getProjectedPoint(x, y, z) {
   };
 }
 
-function drawPoem() {
+function applyConstellationTransform(offsetY = 0) {
+  const center = getConstellationCenter();
+
+  translate(0, offsetY);
+
+  translate(center.x, center.y, center.z);
+
+  rotateY(rotationY);
+  rotateX(rotationX);
+
+  translate(-center.x, -center.y, -center.z);
+}
+
+function drawConstellationStars(extraOffsetY = 0) {
   push();
 
   const starsProgress = rangeProgress(
@@ -766,31 +808,28 @@ function drawPoem() {
   const starsOffsetY = lerp(height + 350, 0, easedStars);
   const starsAlpha = 255 * easedStars;
 
-  translate(0, starsOffsetY, 0);
-
-  const center = getConstellationCenter();
-
+  if (currentScene !== STAR_EXIT) {
   constellationRotX = lerp(constellationRotX, targetRotX, 0.035);
   constellationRotY = lerp(constellationRotY, targetRotY, 0.035);
+}
 
-  const rotationX =
-    constellationRotX + cos(frameCount * 0.0012) * 0.01;
+rotationX = constellationRotX + cos(frameCount * 0.0012) * 0.01;
+rotationY = constellationRotY + sin(frameCount * 0.0015) * 0.015;
 
-  const rotationY =
-    constellationRotY + sin(frameCount * 0.0015) * 0.015;
-
-  translate(center.x, center.y, center.z);
-  rotateY(rotationY);
-  rotateX(rotationX);
-  translate(-center.x, -center.y, -center.z);
+applyConstellationTransform(starsOffsetY + extraOffsetY);
 
   textAlign(LEFT, CENTER);
   labelHitAreas = [];
 
   const finalAlpha = constellationAlpha * (starsAlpha / 255);
+  const exitTone = currentScene === STAR_EXIT ? lerp(255, 0, sceneProgress) : 255;
 
   // Draw stars and labels once.
-  for (const star of constellationStars) {
+ for (const star of constellationStars) {
+
+    if (currentScene === STAR_EXIT && star === transitionStar) {
+        continue;
+    }
     const targetFocus = selectedStar === star ? 1 : 0;
     star.focus = lerp(star.focus || 0, targetFocus, 0.06);
     star.alpha = finalAlpha;
@@ -799,49 +838,68 @@ function drawPoem() {
 
     push();
 
-    translate(star.x, star.y, star.z + star.focus * 180);
+ let depth = map(star.z, -250, 250, 0.35, 1.0);
+
+let localProgress = constrain(
+  easedStars / depth,
+  0,
+  1
+);
+
+let enterY = lerp(height + 700 * depth, 0, localProgress);
+
+translate(
+  star.x,
+  star.y + enterY,
+  star.z + star.focus * 180
+);
+
+    star.screen = getScreenPointFromMatrix();
 
     noStroke();
-    fill(star.brightness ?? 255, star.alpha);
+    fill(
+      currentScene === STAR_EXIT ? exitTone : star.brightness ?? 255,
+      star.alpha
+    );
     sphere(starSize);
 
-   if (star.isAnchor && star.label) {
-  const labelX = star.labelOffsetX ?? 18;
-const labelY = star.labelOffsetY ?? -12;
+    if (star.isAnchor && star.label) {
+      const labelX = star.labelOffsetX ?? 18;
+      const labelY = star.labelOffsetY ?? -12;
 
-// Undo constellation rotation so the text faces the camera.
-rotateX(-rotationX);
-rotateY(-rotationY);
+      // Undo constellation rotation so the text faces the camera.
+      rotateX(-rotationX);
+      rotateY(-rotationY);
 
-// Move to the exact place where the text is drawn.
-translate(labelX, labelY, 2);
+      // Move to the exact place where the text is drawn.
+      translate(labelX, labelY, 2);
 
-// Read the final matrix here: this is the same position as the label.
-const labelPosition = getScreenPointFromMatrix();
+      // Read the final matrix here: this is the same position as the label.
+      const labelPosition = getScreenPointFromMatrix();
 
-noStroke();
-fill(255, star.alpha);
+      noStroke();
+      fill(exitTone, star.alpha);
 
-textSize(lerp(12, 17, star.focus));
-text(star.label, 0, 0);
+      textSize(lerp(12, 17, star.focus));
+      text(star.label, 0, 0);
 
-if (star.poem && star.alpha > 20 && labelPosition) {
-  const labelWidth = textWidth(star.label);
+      if (star.poem && star.alpha > 20 && labelPosition) {
+        const labelWidth = textWidth(star.label);
 
-  // p5 text begins at the current origin because textAlign(LEFT, CENTER).
-  labelHitAreas.push({
-    line: star,
-    x: labelPosition.x + labelWidth / 2,
-    y: labelPosition.y,
-    w: labelWidth + 18,
-    h: 30,
-  });
-}}
+        // p5 text begins at the current origin because textAlign(LEFT, CENTER).
+        labelHitAreas.push({
+          line: star,
+          x: labelPosition.x + labelWidth / 2,
+          y: labelPosition.y,
+          w: labelWidth + 18,
+          h: 30,
+        });
+      }
+    }
 
     pop();
   }
 
-  // Explicit constellation structure.
   strokeWeight(0.55);
 
   for (const edge of constellationEdges) {
@@ -850,9 +908,9 @@ if (star.poem && star.alpha > 20 && labelPosition) {
 
     if (!a || !b) continue;
 
-    const visibility = min(a.alpha, b.alpha) * 0.18;
+    let visibility = min(a.alpha, b.alpha) * 0.18;
 
-    stroke(210, visibility);
+    stroke(currentScene === STAR_EXIT ? exitTone : 210, visibility);
 
     line(
       a.x,
@@ -867,6 +925,135 @@ if (star.poem && star.alpha > 20 && labelPosition) {
   pop();
 }
 
+function beginTransition(star) {
+  transitionStar = star;
+  const start = star.screen || { x: mouseX, y: mouseY };
+  transitionStarScreen = {
+    x: start.x - width / 2,
+    y: start.y - height / 2,
+    size: lerp(star.size ?? 1.5, 4.5, star.focus || 0),
+  };
+
+  startRotX = constellationRotX;
+  startRotY = constellationRotY;
+
+  currentScene = STAR_EXIT;
+  sceneProgress = 0;
+}
+
+function drawStarExit() {
+  sceneProgress += (deltaTime / 1000) / STAR_EXIT_TIME;
+  sceneProgress = constrain(sceneProgress, 0, 1);
+
+  let t = easeInOutCubic(sceneProgress);
+
+  let bg = easeInOutCubic(t);
+
+  background(255 * bg);
+
+  let starColor = lerp(255, 0, t);
+  let glow = lerp(1, 2.2, bg);
+  let size = lerp(1, 1.6, bg);
+
+let constellationExit =
+    lerp(0, -height * 1.4, easeInOutCubic(t));
+
+drawConstellationStars(constellationExit);
+
+  let fall = (height + 220) * t * t;
+  let starX = transitionStarScreen.x;
+  let starY = transitionStarScreen.y + fall;
+  let c = lerp(255, 0, t);
+  let tailLength = lerp(20, 160, constrain(t * 1.4, 0, 1));
+  let tailAlpha = 180 * sin(PI * constrain(t, 0, 1));
+
+  push();
+  drawingContext.disable(drawingContext.DEPTH_TEST);
+  translate(starX, starY);
+
+  stroke(c, tailAlpha);
+  strokeWeight(2.5);
+  line(0, -tailLength, 0, -8);
+
+  stroke(c, tailAlpha * 0.35);
+  strokeWeight(7);
+  line(0, -tailLength * 0.75, 0, -12);
+
+  noStroke();
+
+  fill(c, 10);
+  sphere(46);
+
+  fill(c, 25);
+  sphere(24);
+
+  fill(c, 95);
+  sphere(11);
+
+  fill(c);
+  sphere(max(4, transitionStarScreen.size * 1.15));
+  drawingContext.enable(drawingContext.DEPTH_TEST);
+  pop();
+
+  if (t >= 1) {
+    currentScene = POEM;
+  }
+}
+
+function drawEmptySpace() {
+  background(255);
+
+  emptyTimer += deltaTime;
+
+  if (emptyTimer > 1800) {
+    currentScene = POEM;
+  }
+}
+
+function drawPoemPage() {
+  background(255);
+
+  if (!selectedStar) return;
+
+  let poem = selectedStar.poem;
+
+  push();
+
+  translate(-width / 2, -height / 2);
+
+  fill(20);
+  noStroke();
+
+  textAlign(CENTER);
+
+  textSize(38);
+  text(selectedStar.label, width / 2, 80);
+
+  textSize(18);
+  fill(120);
+  text(poem.author, width / 2, 120);
+
+  fill(20);
+
+  textAlign(LEFT);
+
+  textSize(20);
+
+  textLeading(34);
+
+  text(poem.text, 140, 180, width - 280, height - 250);
+
+  fill(140);
+
+  textSize(14);
+
+  textAlign(CENTER);
+
+  text("Click anywhere to return", width / 2, height - 60);
+
+  pop();
+}
+
 function getScreenPointFromMatrix() {
   const m = _renderer.uMVMatrix.mat4;
   const p = _renderer.uPMatrix.mat4;
@@ -877,144 +1064,22 @@ function getScreenPointFromMatrix() {
   const mvZ = m[14];
   const mvW = m[15];
 
-  const clipX =
-    p[0] * mvX +
-    p[4] * mvY +
-    p[8] * mvZ +
-    p[12] * mvW;
+  const clipX = p[0] * mvX + p[4] * mvY + p[8] * mvZ + p[12] * mvW;
 
-  const clipY =
-    p[1] * mvX +
-    p[5] * mvY +
-    p[9] * mvZ +
-    p[13] * mvW;
+  const clipY = p[1] * mvX + p[5] * mvY + p[9] * mvZ + p[13] * mvW;
 
-  const clipW =
-    p[3] * mvX +
-    p[7] * mvY +
-    p[11] * mvZ +
-    p[15] * mvW;
+  const clipW = p[3] * mvX + p[7] * mvY + p[11] * mvZ + p[15] * mvW;
 
   if (!Number.isFinite(clipW) || clipW === 0) return null;
 
   return {
-    x: (clipX / clipW * 0.5 + 0.5) * width,
-    y: (1 - (clipY / clipW * 0.5 + 0.5)) * height,
+    x: ((clipX / clipW) * 0.5 + 0.5) * width,
+    y: (1 - ((clipY / clipW) * 0.5 + 0.5)) * height,
   };
 }
 
-function drawPoemInfo() {
-  if (!selectedStar || !selectedStar.poem) return;
-
-  const poem = selectedStar.poem;
-
-  const panelX = 36;
-  const panelY = 36;
-  const panelW = min(520, width - 72);
-  const panelH = min(height - 72, 620);
-
-  const padding = 26;
-  const titleY = panelY + padding;
-  const authorY = titleY + 32;
-  const textY = authorY + 30;
-  const footerH = 34;
-
-  const textX = panelX + padding;
-  const textW = panelW - padding * 2;
-  const textH = panelH - (textY - panelY) - footerH - padding;
-
-  push();
-
-  // Convert WEBGL-centered coordinates to normal screen coordinates.
-  translate(-width / 2, -height / 2);
-
-  noStroke();
-  fill(0, 220);
-  rect(panelX, panelY, panelW, panelH, 14);
-
-  textAlign(LEFT, TOP);
-
-  fill(255);
-  textSize(16);
-  text(selectedStar.label, textX, titleY);
-
-  fill(255, 170);
-  textSize(11);
-  text(poem.author, textX, authorY);
-
-  textSize(13);
-  const lineHeight = 19;
-  textLeading(lineHeight);
-
-  const lines = wrapPoemText(poem.text, textW);
-  const contentHeight = lines.length * lineHeight;
-
-  poemScrollMax = max(0, contentHeight - textH);
-  poemScroll = constrain(poemScroll, 0, poemScrollMax);
-
-  // Draw only lines currently inside the text area.
-  const firstVisibleLine = max(0, floor(poemScroll / lineHeight) - 1);
-  const lastVisibleLine = min(
-    lines.length,
-    ceil((poemScroll + textH) / lineHeight) + 1
-  );
-
-  fill(255, 225);
-
-  for (let i = firstVisibleLine; i < lastVisibleLine; i++) {
-    const lineY = textY + i * lineHeight - poemScroll;
-
-    // Avoid drawing lines above/below the intended text area.
-    if (lineY >= textY - lineHeight && lineY <= textY + textH) {
-      text(lines[i], textX, lineY);
-    }
-  }
-
-  fill(255, 125);
-  textSize(11);
-
-  const hint =
-    poemScrollMax > 0
-      ? "Scroll to read • Click outside a label to close"
-      : "Click outside a label to close";
-
-  text(hint, textX, panelY + panelH - 24);
-
-  pop();
-}
-
-function wrapPoemText(source, maxWidth) {
-  const output = [];
-  const paragraphs = source.split("\n");
-
-  for (const paragraph of paragraphs) {
-    if (paragraph.trim() === "") {
-      output.push("");
-      continue;
-    }
-
-    const words = paragraph.split(" ");
-    let currentLine = "";
-
-    for (const word of words) {
-      const candidate = currentLine ? `${currentLine} ${word}` : word;
-
-      if (textWidth(candidate) <= maxWidth) {
-        currentLine = candidate;
-      } else {
-        if (currentLine) output.push(currentLine);
-        currentLine = word;
-      }
-    }
-
-    if (currentLine) output.push(currentLine);
-  }
-
-  return output;
-}
-
 function mouseWheel(event) {
-  if (!selectedStar || poemScrollMax <= 0) return;
+  if (currentScene !== POEM) return;
 
   poemScroll += event.delta;
   poemScroll = constrain(poemScroll, 0, poemScrollMax);
@@ -1022,37 +1087,49 @@ function mouseWheel(event) {
   return false;
 }
 
-function mouseDragged() {
-  if (!starReleased) return;
+function mousePressed() {
+  if (currentScene === INTRO) {
+    handleIntroClick();
+    return;
+  }
 
-  // Drag changes the target slowly
+  if (currentScene === CONSTELLATION) {
+    handleConstellationClick();
+    return;
+  }
+
+  if (currentScene === POEM) {
+    handlePoemClick();
+    return;
+  }
+}
+
+function mouseDragged() {
+  if (currentScene !== CONSTELLATION) return;
+
   targetRotY += movedX * 0.002;
   targetRotX += movedY * 0.002;
 }
 
-function mousePressed() {
-  // Scene 1: zOrka is the start button
-  if (frozen && !transition) {
-    const mx = mouseX - width / 2;
-    const my = mouseY - height / 2;
+function handleIntroClick() {
+  if (!frozen || transition) return;
 
-    const inside =
-      mx > button.x - button.w / 2 &&
-      mx < button.x + button.w / 2 &&
-      my > button.y - button.h / 2 &&
-      my < button.y + button.h / 2;
+  const mx = mouseX - width / 2;
+  const my = mouseY - height / 2;
 
-    if (inside) {
-      transition = true;
-      scene2Time = 0;
-    }
+  const inside =
+    mx > button.x - button.w / 2 &&
+    mx < button.x + button.w / 2 &&
+    my > button.y - button.h / 2 &&
+    my < button.y + button.h / 2;
 
-    return;
+  if (inside) {
+    transition = true;
+    scene2Time = 0;
   }
+}
 
-  // Scene 2: poem labels are buttons
-  if (!starReleased) return;
-
+function handleConstellationClick() {
   let clicked = null;
   let closest = Infinity;
 
@@ -1063,22 +1140,73 @@ function mousePressed() {
     const inside = abs(dx) < area.w / 2 && abs(dy) < area.h / 2;
 
     if (inside) {
-      const distanceToLabel = dist(mouseX, mouseY, area.x, area.y);
+      const d = dist(mouseX, mouseY, area.x, area.y);
 
-      if (distanceToLabel < closest) {
-        closest = distanceToLabel;
+      if (d < closest) {
+        closest = d;
         clicked = area.line;
       }
     }
   }
 
-  // Click a label: open/focus it.
-  // Click empty space: close it.
-  if (selectedStar !== clicked) {
+  if (!clicked) {
+    selectedStar = null;
+    return;
+  }
+
   poemScroll = 0;
+
+  selectedStar = clicked;
+
+  poemTransition = 0;
+
+  beginTransition(clicked);
 }
 
-selectedStar = clicked;
+function handlePoemClick() {
+  currentScene = CONSTELLATION;
+
+  transitionStar = null;
+  sceneProgress = 0;
+  emptyTimer = 0;
+}
+
+class DissolveParticle {
+  constructor(x, y, z) {
+    this.x = x + random(-3, 3);
+    this.y = y + random(-3, 3);
+    this.z = z + random(-3, 3);
+    let angle = random(TWO_PI);
+    let speed = random(0.4, 2.5);
+
+    this.vx = cos(angle) * speed;
+    this.vy = sin(angle) * speed;
+    this.vz = random(-0.8, 0.8);
+
+    this.life = 255;
+    this.size = random(1, 4);
+  }
+
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.z += this.vz;
+
+    this.life -= 0.8;
+  }
+
+  draw() {
+    push();
+
+    translate(this.x, this.y, this.z);
+
+    noStroke();
+    fill(255, this.life);
+
+    sphere(this.size);
+
+    pop();
+  }
 }
 
 function easeInOutCubic(x) {
