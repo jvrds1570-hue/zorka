@@ -10,6 +10,8 @@ let romanceVisualProgress = 0;
 let romanceDarkProgress = 0;
 let romanceBlockFades = [];
 let romanceStar = null;
+let romanceCloudLayer = null;
+let romanceCloudFrame = -1;
 let elevationBlockStates = [];
 let elevationLetterStates = [];
 let listenCursorX = 0;
@@ -1091,6 +1093,7 @@ function resetPoemSceneState() {
     romanceVisualProgress = 0;
     romanceDarkProgress = 0;
     romanceBlockFades = [];
+    romanceCloudFrame = -1;
     resetRomanceStar();
   } else if (key === "elevation") {
     elevationBlockStates = [];
@@ -1306,17 +1309,15 @@ function drawElevationPoem(poem, style) {
 function drawElevationBlocks(poem, style) {
   const blocks = getPoemBlocks(poem);
   const maxDist = min(width, height) * 0.36;
-  const twoColumns = width > 820;
-  const colW = twoColumns ? min(390, width * 0.34) : width - style.bodyX * 2;
+  const colW = min(460, width - style.bodyX * 2);
   const startY = style.bodyY + 10;
-  const rowGap = 142;
-  const leftX = style.bodyX;
-  const rightX = width - style.bodyX - colW;
+  const rowGap = 112;
+  const baseX = style.bodyX;
 
   while (elevationBlockStates.length < blocks.length) {
     const i = elevationBlockStates.length;
-    const origX = twoColumns && i % 2 === 1 ? rightX : leftX;
-    const origY = startY + floor(i / (twoColumns ? 2 : 1)) * rowGap;
+    const origX = baseX + ((i % 3) - 1) * 16;
+    const origY = startY + i * rowGap;
 
     elevationBlockStates.push({
       x: origX,
@@ -1332,8 +1333,8 @@ function drawElevationBlocks(poem, style) {
 
   for (let i = 0; i < blocks.length; i++) {
     const state = elevationBlockStates[i];
-    const origX = twoColumns && i % 2 === 1 ? rightX : leftX;
-    const origY = startY + floor(i / (twoColumns ? 2 : 1)) * rowGap;
+    const origX = baseX + ((i % 3) - 1) * 16;
+    const origY = startY + i * rowGap;
     const blockCenterX = origX + colW * 0.5;
     const blockCenterY = origY + 55;
     const d = dist(blockCenterX, blockCenterY, mouseX, mouseY);
@@ -1443,30 +1444,51 @@ function drawRomancePoem(poem, style) {
   const cloudTone = contrastTone(bgTone);
 
   background(constrain(bgTone + pulse, 0, 255));
-  const lettersSource = poemLetters(poem);
-  const pixelScale = 7;
-  const cutoff = 0.52;
-  const t = millis() / 100000;
-  let index = 0;
-
-  textFont(poemFont);
-  textAlign(CENTER, CENTER);
-  for (let x = 0; x <= width; x += pixelScale) {
-    for (let y = 0; y <= height; y += pixelScale) {
-      const n = noise(x * 0.008 + t * 6, y * 0.008 + t * 1.6, t * 4);
-      if (n < cutoff) continue;
-
-      const alpha = map(n, cutoff, 0.72, 18, 150, true) * poemSceneFade;
-      fill(cloudTone, alpha * (0.55 + romanceVisualProgress * 0.45));
-      textSize(pixelScale * 1.22);
-      text(lettersSource[index % lettersSource.length], x, y);
-      index++;
-    }
-  }
+  drawRomanceCloudLayer(poem, cloudTone);
 
   drawRomanceStar(darkProgress, bgTone);
   drawPoemHeader(poem, style, [inkTone, inkTone, inkTone], [inkTone, inkTone, inkTone, 170], LEFT);
   drawRomanceBlocks(blocks, style, inkTone, bgTone);
+}
+
+function drawRomanceCloudLayer(poem, cloudTone) {
+  if (!romanceCloudLayer || romanceCloudLayer.width !== width || romanceCloudLayer.height !== height) {
+    romanceCloudLayer = createGraphics(width, height);
+    romanceCloudFrame = -1;
+  }
+
+  const refreshEvery = 3;
+  if (romanceCloudFrame < 0 || frameCount - romanceCloudFrame >= refreshEvery) {
+    const lettersSource = poemLetters(poem);
+    const pixelScale = max(9, floor(min(width, height) / 76));
+    const cutoff = 0.52;
+    const t = millis() / 100000;
+    let index = 0;
+
+    romanceCloudLayer.clear();
+    romanceCloudLayer.textFont(poemFont);
+    romanceCloudLayer.textAlign(CENTER, CENTER);
+    romanceCloudLayer.noStroke();
+
+    for (let x = 0; x <= width; x += pixelScale) {
+      for (let y = 0; y <= height; y += pixelScale) {
+        const n = noise(x * 0.008 + t * 6, y * 0.008 + t * 1.6, t * 4);
+        if (n < cutoff) continue;
+
+        const alpha = map(n, cutoff, 0.72, 18, 150, true);
+        romanceCloudLayer.fill(cloudTone, alpha * (0.55 + romanceVisualProgress * 0.45));
+        romanceCloudLayer.textSize(pixelScale * 1.2);
+        romanceCloudLayer.text(lettersSource[index % lettersSource.length], x, y);
+        index++;
+      }
+    }
+
+    romanceCloudFrame = frameCount;
+  }
+
+  tint(255, 255 * poemSceneFade);
+  image(romanceCloudLayer, 0, 0);
+  noTint();
 }
 
 function smoothDarkProgress(progress) {
@@ -1521,12 +1543,10 @@ function drawRomanceBlocks(blocks, style, inkTone, bgTone) {
   const visible = min(romanceRevealCount, blocks.length);
   const bodySize = max(12, style.bodySize - 3);
   const bodyLeading = max(18, style.bodyLeading - 8);
-  const twoColumns = width > 980;
-  const colW = twoColumns ? min(330, width * 0.27) : min(430, width - style.bodyX * 2);
-  const rowGap = max(126, bodyLeading * 5.2);
+  const colW = min(380, width * 0.31);
+  const rowGap = max(104, bodyLeading * 4.7);
   const startY = style.bodyY + 6;
-  const leftX = twoColumns ? width - colW * 2 - 116 : width - colW - 70;
-  const rightX = width - colW - 70;
+  const baseX = width - colW - 78;
 
   textFont(poemFont);
   textAlign(LEFT, TOP);
@@ -1546,12 +1566,9 @@ function drawRomanceBlocks(blocks, style, inkTone, bgTone) {
       (bgTone > 92 ? min(255, blockAlpha + 35) : blockAlpha) *
       fade *
       poemSceneFade;
-    const col = twoColumns ? i % 2 : 0;
-    const row = twoColumns ? floor(i / 2) : i;
-    const xBase = col === 0 ? leftX : rightX;
-    const xOffset = (col === 0 ? -1 : 1) * sin(i * 1.7) * 8;
-    const x = xBase + xOffset;
-    const y = startY + row * rowGap;
+    const xOffset = ((i % 3) - 1) * 16 + sin(i * 1.7) * 5;
+    const x = baseX + xOffset;
+    const y = startY + i * rowGap;
     const revealY = y + (1 - fade) * 18;
 
     fill(inkTone, alpha);
@@ -1714,7 +1731,7 @@ function drawListenParticleText(poem, style) {
   const lineSize = max(11, style.bodySize - 5);
   const lineGap = max(18, style.bodyLeading - 8);
   const maxW = width * 0.43;
-  listenRevealProgress = lerp(listenRevealProgress, listenRevealSections, 0.055);
+  listenRevealProgress = lerp(listenRevealProgress, listenRevealSections, 0.045);
 
   textFont(poemFont);
   textAlign(LEFT, TOP);
@@ -1737,8 +1754,12 @@ function drawListenParticleText(poem, style) {
       const line = section[localLine];
       const lineY = y + globalLine * lineGap;
       const activeLines = max(1, section.filter((item) => item.trim() !== "").length);
-      const lineDelay = localLine / max(1, activeLines + 1.5);
-      const reveal = easeInOutCubic(constrain((sectionProgress - lineDelay) / 0.22, 0, 1));
+      const lineDelay = localLine / max(1, activeLines + 1.2);
+      const reveal = easeInOutCubic(constrain((sectionProgress - lineDelay) / 0.28, 0, 1));
+      const force = sin(PI * reveal);
+      const isOpening = localLine === 0;
+      const isShort = line.trim().length <= 12;
+      const lineWeight = isOpening || isShort ? 1.45 : 1;
 
       globalLine++;
 
@@ -1746,31 +1767,57 @@ function drawListenParticleText(poem, style) {
       if (line.trim() === "") continue;
 
       if (reveal < 0.985) {
-        const particleCount = min(52, max(14, floor(line.length * 1.15)));
+        const particleCount = min(58, max(16, floor(line.length * 1.2)));
         const textW = min(maxW, textWidth(line));
         for (let p = 0; p < particleCount; p++) {
           const k = particleCount <= 1 ? 0 : p / (particleCount - 1);
           const targetX = x + k * textW;
           const targetY = lineY + lineSize * 0.62;
           const seed = sectionIndex * 97 + localLine * 41 + p * 13;
-          const starX = width * (0.08 + ((seed % 17) / 16) * 0.84) + sin(seed) * 18;
-          const starY = height * (0.12 + (((seed * 7) % 19) / 18) * 0.76) + cos(seed) * 16;
-          const arc = sin(k * PI) * 70 * (1 - reveal);
-          const swirl = sin(frameCount * 0.028 + seed) * 26 * (1 - reveal);
-          const px = lerp(starX, targetX, reveal) + cos(seed) * arc + swirl;
-          const py = lerp(starY, targetY, reveal) - arc * 0.55 + cos(frameCount * 0.022 + seed) * 18 * (1 - reveal);
-          const alpha = sin((1 - reveal) * PI) * 155 * poemSceneFade;
-          const size = 1.1 + sin(frameCount * 0.04 + seed) * 0.4 + (1 - reveal) * 2.8;
+          const side = p % 2 === 0 ? -1 : 1;
+          const starX =
+            targetX +
+            side * (width * 0.2 + (seed % 9) * 10) * (1 - reveal) +
+            sin(seed) * 34;
+          const starY = height * (0.08 + (((seed * 7) % 23) / 22) * 0.84) + cos(seed) * 30;
+          const arc = sin(k * PI) * 86 * (1 - reveal);
+          const slash = side * pow(1 - reveal, 1.5) * 54;
+          const swirl = sin(frameCount * 0.036 + seed) * 28 * (1 - reveal);
+          const overshoot = force * side * 8;
+          const px = lerp(starX, targetX + overshoot, reveal) + slash + swirl;
+          const py = lerp(starY, targetY, reveal) - arc * 0.55 + cos(frameCount * 0.032 + seed) * 20 * (1 - reveal);
+          const alpha = sin((1 - reveal) * PI) * 175 * poemSceneFade;
+          const size = 1.1 + sin(frameCount * 0.055 + seed) * 0.4 + (1 - reveal) * 3.2;
 
-          fill(0, alpha * 0.07);
-          circle(px, py, size * 8);
+          fill(0, alpha * 0.09);
+          circle(px, py, size * 10);
           fill(0, alpha);
           circle(px, py, size);
         }
       }
 
-      fill(34, 34, 34, 220 * reveal * poemSceneFade);
-      text(line, x, lineY, maxW, lineGap * 1.2);
+      const staggerX = ((localLine % 4) - 1.5) * 18;
+      const blockX = x + staggerX - 12;
+      const blockW = min(maxW, textWidth(line) + 28);
+      const barHeight = isOpening || isShort ? 5 : 3;
+
+      fill(0, (28 + lineWeight * 12) * force * poemSceneFade);
+      rect(blockX, lineY + lineSize * 0.18, blockW * (0.15 + reveal * 0.85), barHeight);
+
+      const impactX =
+        (1 - reveal) * (localLine % 2 === 0 ? -18 : 18) +
+        sin(frameCount * 0.12 + localLine) * force * 1.8;
+      const impactY = (1 - reveal) * (isOpening ? -8 : 5);
+      const scalePulse = 1 + force * (isOpening ? 0.16 : 0.06);
+
+      push();
+      translate(x + staggerX + impactX, lineY + impactY);
+      scale(scalePulse, 1);
+      fill(18, 18, 18, 240 * reveal * poemSceneFade);
+      textSize(lineSize * lineWeight);
+      text(line, 0, 0, maxW, lineGap * 1.35);
+      pop();
+      textSize(lineSize);
     }
   }
 }
@@ -2090,4 +2137,6 @@ function easeInOutCubic(x) {
 
 function windowResized() {
   resizeCanvas(windowWidth, windowHeight);
+  romanceCloudLayer = null;
+  romanceCloudFrame = -1;
 }
